@@ -19,7 +19,7 @@ namespace MarkdownParser.Helpers
             foreach (var model in storageModel)
             {
                 var document = mc.Create(); // create the document
-                document.Properties.noteDate = model.NoteDate.ToUniversalTime();
+                document.Properties.noteDate = model.NoteDate;
                 document.Properties.noteName = model.NoteName;
                 document.Properties.section = model.Section;
                 document.Properties.tags = [.. model.Tags];
@@ -29,20 +29,11 @@ namespace MarkdownParser.Helpers
                 weaviateObject.Add(document);
             }
 
-            await mc.Add(weaviateObject);
-
-            //await mc.Update();
-
-            //var q1 = mc.CreateAggregateQuery();
-            //var q = mc.CreateGetQuery(true);
-            //var query = new GraphQLQuery()
-            //{
-            //    Query = q.ToString()
-            //};
-            //var ret = await weaviateDB.Schema.RawQuery(query);
-            //var d = ret.Data["Get"];
-            //var data = d["StorageModel"];
-            //var a = data.ToObject<StorageModelWeaviate[]>();
+            var result = await mc.Add(weaviateObject);
+            if (result != null || !result.Any())
+            {
+                Console.WriteLine("There must have been a problem as the return collection was empty");
+            }
         }
     }
 }

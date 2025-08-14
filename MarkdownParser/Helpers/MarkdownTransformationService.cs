@@ -2,17 +2,20 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using MindLog.Shared.Models;
+using Microsoft.Extensions.Configuration;
 
 namespace MarkdownParser.Helpers
 {
-    internal static class MarkdownTransformationService
+    public class MarkdownTransformationService
     {
-        static HttpClient sharedClient = new()
-        {
-            BaseAddress = new Uri("http://127.0.0.1:5000/"), // fix this
-        };
+        private HttpClient _sharedClient = new();
 
-        internal static async Task<IEnumerable<StorageModel>> Transform(IEnumerable<MarkdownSection> markdownSections)
+        public MarkdownTransformationService(IConfiguration configuration)
+        {
+            _sharedClient.BaseAddress = new Uri(configuration.GetValue<string>("embeddingsService")!);
+        }
+
+        internal async Task<IEnumerable<StorageModel>> Transform(IEnumerable<MarkdownSection> markdownSections)
         {
             var sentencesTransform = markdownSections
                 .Select(x => new SentenceTransform()
@@ -22,7 +25,7 @@ namespace MarkdownParser.Helpers
                 });
 
             var result =
-                await sharedClient
+                await _sharedClient
                 .PostAsJsonAsync("sentences-transform", sentencesTransform, new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true,

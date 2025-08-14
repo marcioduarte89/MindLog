@@ -1,39 +1,17 @@
 ﻿using MarkdownParser.Helpers;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 Console.WriteLine("Hello, Parser!");
 
-var config = new ConfigurationBuilder()
-     .AddJsonFile($"appsettings.json")
-     .Build();
+var builder = Host.CreateApplicationBuilder(args);
 
-string? markdownPath = config.GetSection("pathToLoadMdFiles")?.Value ?? 
-    throw new ArgumentNullException("lastParserLogFileName does not exist or is not configured");
+builder.Services.AddSingleton<MarkdownTransformationService>();
+builder.Services.AddSingleton<Parser>();
 
-var lastLogFileName = GetLastLogFileName(config);
-var lastLogFileTimestamp = await FileHelpers.GetLastLogFileDateTime(lastLogFileName);
+var host = builder.Build();
 
-var filePathList = FileHelpers.GetAllFilesInDirectoryBasedOnLastUpdated(markdownPath, lastLogFileTimestamp);
+var parser = host.Services.GetRequiredService<Parser>();
+await parser.Start();
 
-if (!filePathList.Any())
-{
-    Console.WriteLine("No file changes");
-    return;
-}
-
-var markdownSections = MarkdownParser.Helpers.MarkdownParser.ParseMarkdownFiles(filePathList);
-
-var storageModels = await MarkdownTransformationService.Transform(markdownSections);
-
-await StorageModelPersister.Save(storageModels);
-
-File.WriteAllText(lastLogFileName, DateTime.UtcNow.ToString());
-
-Console.ReadKey();
-
-static string GetLastLogFileName(IConfigurationRoot config)
-{
-    return Path.Combine(
-        config.GetSection("pathToLoadMdFiles")?.Value ?? throw new ArgumentNullException("lastParserLogFileName does not exist or is not configured"),
-        config.GetSection("lastParserLogFileName")?.Value ?? throw new ArgumentNullException("lastParserLogFileName does not exist or is not configured"));
-}
+await host.RunAsync();

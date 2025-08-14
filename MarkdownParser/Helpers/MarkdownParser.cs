@@ -46,6 +46,9 @@ namespace MarkdownParser.Helpers
 
             var metadata = deserializer.Deserialize<FrontMatterBlock>(yamlBlock.Lines.ToString());
 
+            var correctedDate = DateTime.SpecifyKind(metadata.Date, DateTimeKind.Utc);
+            metadata = metadata with { Date = correctedDate };
+
             string currentHeading = null;
             var currentTextLines = new List<string>();
 

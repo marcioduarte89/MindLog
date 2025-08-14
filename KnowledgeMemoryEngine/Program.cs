@@ -1,12 +1,17 @@
-﻿using Microsoft.AspNetCore.Builder;
+﻿using KnowledgeBaseEngine.Helpers;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://localhost:5001");
 builder.Services.AddOptions();
+builder.Services.AddChatClient(new OllamaChatClient(new Uri("http://localhost:11434/"), "llama3.2:3b"));
+builder.Services.AddSingleton<QueryTranslator>();
+builder.Services.AddScoped<WeaviateClient>();
+builder.Services.AddSingleton<SentenceTransformer>();
+
 builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddControllers();
@@ -19,7 +24,13 @@ app.MapControllers();
 app.MapMcp("/mcp");
 app.Run();
 
-//var builder = Host.CreateEmptyApplicationBuilder(settings: null);
+//var builder = Host.CreateApplicationBuilder(args);
+
+//builder.Logging.AddConsole(consoleLogOptions =>
+//{
+//    // Configure all logs to go to stderr
+//    consoleLogOptions.LogToStandardErrorThreshold = LogLevel.Trace;
+//});
 
 //builder
 //    .Services
@@ -31,11 +42,11 @@ app.Run();
 //     .AddJsonFile($"appsettings.json")
 //     .Build();
 
-//builder.Services.AddSingleton(_ =>
-//{
-//    var client = new HttpClient() { BaseAddress = new Uri(config.GetSection("embeddingsService").Value) };
-//    return client;
-//});
+//builder.Services.AddOptions();
+//builder.Services.AddChatClient(new OllamaChatClient(new Uri("http://localhost:11434/"), "llama3.2:3b"));
+//builder.Services.AddSingleton<QueryTranslator>();
+//builder.Services.AddScoped<WeaviateClient>();
+//builder.Services.AddSingleton<SentenceTransformer>();
 
 //var app = builder.Build();
 

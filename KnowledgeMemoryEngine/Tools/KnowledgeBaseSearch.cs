@@ -1,14 +1,11 @@
 ﻿using KnowledgeBaseEngine.Helpers;
 using KnowledgeBaseEngine.Models;
-using Microsoft.Recognizers.Text;
-using Microsoft.Recognizers.Text.DateTime;
 using MindLog.Shared.Models;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
-using System.Net.Http.Json;
-using System.Text.Json;
-using System.Text.RegularExpressions;
 using WeaviateNET;
+using WeaviateNET.Query;
+using WeaviateNET.Query.AdditionalProperty;
 using WeaviateNET.Query.ConditionalOperator;
 
 namespace KnowledgeBaseEngine.Tools
@@ -16,60 +13,72 @@ namespace KnowledgeBaseEngine.Tools
     [McpServerToolType]
     public class KnowledgeBaseSearch
     {
-        static HttpClient sentenceTransformClient = new()
-        {
-            BaseAddress = new Uri("http://127.0.0.1:5000/"), // fix this
-        };
-
         [McpServerTool, Description("Queries the Knowledge base")]
-        public static async Task<IEnumerable<Note>> Query(string query)
+        public static async Task<IEnumerable<Note>> Query(
+            QueryTranslator queryTranslator,
+            Helpers.WeaviateClient weaviateClient,
+            SentenceTransformer sentenceTransformer,
+            string query)
         {
-            var sentence = new SentenceTransform()
+            //var translatedQuery = await queryTranslator.Translate(query);
+            var translatedQuery = new TranslatedQuery()
             {
-                Id = Guid.NewGuid(),
-
-                Text = query,
+                Query = "Dependency injection",
+                DateRange = new DateRange()
+                {
+                    EndDate = DateTime.UtcNow,
+                    StartDate = DateTime.UtcNow.AddYears(-5)
+                },
+                Keywords = ["DependencyInjection"]
             };
 
-            var result = await sentenceTransformClient
-                .PostAsJsonAsync<IEnumerable<SentenceTransform>>("sentences-transform", [sentence], 
-                new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true,
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                });
+            var sentenceEmbeddings = await sentenceTransformer.GetEmbeddings(translatedQuery.Query);
 
-            var sentencesEmbeddings = await result
-                .Content
-                .ReadFromJsonAsync<IEnumerable<SentenceEmbeddings>>() ?? 
-                throw new Exception($"Could not get embedding from sentece {sentence}");
-
-            var weaviateDB = new WeaviateDB("http://localhost:8080/v1");
-            await weaviateDB.Schema.Update();
-            var mc = weaviateDB.Schema.GetClass<StorageModelWeaviate>("StorageModel") ??
-                     throw new Exception("Storage model does not exist");
-
-            var dateTimeFilter = DateTimeConditionBuilder.GetDateTimeFilter(query);
+            var mc = await weaviateClient.GetWeaviateClass();
 
             var q = mc.CreateGetQuery();
-            q.Filter.NearVector(sentencesEmbeddings.Single().Embeddings.ToArray());
+            q.Filter.NearVector(sentenceEmbeddings.Single().Embeddings.ToArray());
 
-            if(dateTimeFilter != null)
+            var conditions = new List<ConditionalAtom<StorageModelWeaviate>>();
+            //the package doesn't yet support this
+            //{
+            //    When<StorageModelWeaviate, float>.GreaterThan(["_additional", "certainty"], 0.6f)
+            //};
+
+            if (translatedQuery.HasKeywords())
             {
-                q.Filter.Where(dateTimeFilter);
+                conditions.Add(When<StorageModelWeaviate, string[]>.ContainsAny("tags", translatedQuery.Keywords));
+            }
+
+            if(translatedQuery.HasDateRange())
+            {
+                conditions.AddRange(
+                    When<StorageModelWeaviate, DateTime>.GreaterThanEqual("noteDate", translatedQuery.DateRange.StartDate),
+                    When<StorageModelWeaviate, DateTime>.LessThanEqual("noteDate", translatedQuery.DateRange.EndDate));
+            } 
+            else if(translatedQuery.HasDate())
+            {
+                conditions.Add(When<StorageModelWeaviate, DateTime>.Equal("noteDate", translatedQuery.Date.Value));
+            }
+
+            if (!conditions.Any())
+            {
+                q.Filter.Limit(10);
             }
             else
             {
-                // If there are no dates to filter, limit by just 10 docs
-                q.Filter.Limit(10);
+                q.Filter.Where(Conditional<StorageModelWeaviate>.And(conditions.ToArray()));
             }
+
+            q.Fields.Additional.Add(Additional.Id);
+            q.Fields.Additional.Add(new Additional("certainty"));
 
             var graphQL = new GraphQLQuery()
             {
                 Query = q.ToString()
             };
 
-            var queryResult = await weaviateDB.Schema.RawQuery(graphQL);
+            var queryResult = await weaviateClient.Db.Schema.RawQuery(graphQL);
             var queryResultGet = queryResult.Data["Get"];
             var queryResultGetData = queryResultGet["StorageModel"];
             var weaviateModel = queryResultGetData.ToObject<StorageModelWeaviate[]>() ??

@@ -29,5 +29,7 @@ namespace MindLog.Shared.Models
         public string[] tags;
 
         public string? section;
+
+        public float certainty { get; set; }
     }
 }
